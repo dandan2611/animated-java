@@ -1,6 +1,7 @@
 export default function upgrade(model: any) {
 	console.log('Processing model format 1.4', model)
 	const fixed = JSON.parse(JSON.stringify(model))
+	fixed.animated_java.exporter_settings ??= {}
 	const exporter = fixed.animated_java.exporter_settings['animated_java:datapack_exporter']
 	if (exporter && exporter.outdated_rig_warning !== undefined) {
 		fixed.animated_java.exporter_settings[

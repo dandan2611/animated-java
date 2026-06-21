@@ -8,7 +8,7 @@ import { parseResourceLocation } from '../../util/minecraftUtil'
 
 const localize = createScopedTranslator('dialog.blueprint_settings')
 
-export type ExportMode = 'folder' | 'zip' | 'none'
+export type ExportMode = 'folder' | 'zip' | 'json' | 'none'
 
 export interface BlueprintSettings {
 	blueprint_id: string
@@ -314,6 +314,41 @@ export function validateZipPath(value: string): ValueCheckResult {
 	}
 }
 
+export function validateJsonPath(value: string): ValueCheckResult {
+	if (value === '') {
+		return {
+			type: 'error',
+			message: localize('json_file.error.no_file_selected'),
+		}
+	}
+
+	let path: string
+	try {
+		path = resolvePath(value)
+	} catch (error: any) {
+		console.error(error)
+		return {
+			type: 'error',
+			message: localize('json_file.error.invalid_path'),
+		}
+	}
+
+	const { existsSync, statSync } = getFsModule()
+	if (existsSync(path) && !statSync(path).isFile()) {
+		return {
+			type: 'error',
+			message: localize('json_file.error.not_a_file'),
+		}
+	}
+
+	if (!/\.json$/i.test(path)) {
+		return {
+			type: 'error',
+			message: localize('json_file.error.require_json_extension'),
+		}
+	}
+}
+
 export async function validateThisProjectsBlueprintSettings(): Promise<
 	Record<string, ValueCheckResult | undefined>
 > {
@@ -337,6 +372,11 @@ export async function validateThisProjectsBlueprintSettings(): Promise<
 		data_pack_zip:
 			Project.animated_java.data_pack_export_mode === 'zip'
 				? validateZipPath(Project.animated_java.data_pack)
+				: undefined,
+		json_file:
+			Project.animated_java.enable_plugin_mode ||
+			Project.animated_java.data_pack_export_mode === 'json'
+				? validateJsonPath(Project.animated_java.json_file)
 				: undefined,
 	}
 }

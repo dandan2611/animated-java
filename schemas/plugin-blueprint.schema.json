@@ -15,6 +15,47 @@
 				"id": {
 					"$ref": "#/definitions/resource_location",
 					"description": "The unique id for this blueprint."
+				},
+				"display_item": {
+					"type": "string",
+					"default": "minecraft:white_dye"
+				},
+				"interpolation_duration": {
+					"type": "number",
+					"default": 1
+				},
+				"teleportation_duration": {
+					"type": "number",
+					"default": 1
+				},
+				"custom_rig_entity_tags": {
+					"type": "array",
+					"items": { "type": "string" },
+					"default": []
+				},
+				"auto_update_rig_orientation": {
+					"type": "boolean",
+					"default": true
+				},
+				"use_entity_stacking": {
+					"type": "boolean",
+					"default": true
+				},
+				"on_summon_function": {
+					"type": "string",
+					"default": ""
+				},
+				"on_remove_function": {
+					"type": "string",
+					"default": ""
+				},
+				"on_pre_tick_function": {
+					"type": "string",
+					"default": ""
+				},
+				"on_post_tick_function": {
+					"type": "string",
+					"default": ""
 				}
 			}
 		},
@@ -53,9 +94,37 @@
 					"$ref": "#/definitions/dynamic_animation"
 				}
 			}
+		},
+		"variants": {
+			"type": "object",
+			"default": {},
+			"patternProperties": {
+				"^[a-z0-9_]+$": {
+					"$ref": "#/definitions/variant"
+				}
+			}
 		}
 	},
 	"definitions": {
+		"variant": {
+			"type": "object",
+			"required": ["uuid", "name", "display_name", "texture_map", "excluded_nodes"],
+			"properties": {
+				"uuid": { "type": "string" },
+				"name": { "type": "string" },
+				"display_name": { "type": "string" },
+				"is_default": { "type": "boolean", "default": false },
+				"texture_map": {
+					"type": "object",
+					"additionalProperties": { "type": "string" }
+				},
+				"excluded_nodes": {
+					"type": "array",
+					"items": { "type": "string" },
+					"default": []
+				}
+			}
+		},
 		"texture": {
 			"type": "object",
 			"oneOf": [
@@ -164,8 +233,29 @@
 				"type": {
 					"type": "string"
 				},
+				"uuid": {
+					"type": "string"
+				},
+				"name": {
+					"type": "string"
+				},
+				"parent": {
+					"type": "string"
+				},
 				"default_transformation": {
 					"$ref": "#/definitions/node_transformation"
+				},
+				"display_properties": {
+					"type": "object"
+				},
+				"locator_properties": {
+					"$ref": "#/definitions/locator_properties"
+				},
+				"interaction_properties": {
+					"$ref": "#/definitions/interaction_properties"
+				},
+				"variant_display_properties": {
+					"type": "object"
 				}
 			},
 			"allOf": [
@@ -259,8 +349,47 @@
 						}
 					},
 					"then": {}
+				},
+				{
+					"if": {
+						"properties": {
+							"type": { "const": "interaction" }
+						}
+					},
+					"then": {
+						"type": "object",
+						"properties": {
+							"interaction_properties": {
+								"$ref": "#/definitions/interaction_properties"
+							}
+						}
+					}
 				}
 			]
+		},
+		"locator_properties": {
+			"type": "object",
+			"properties": {
+				"use_entity": { "type": "boolean", "default": false },
+				"entity_type": { "type": "string", "default": "minecraft:marker" },
+				"sync_passenger_rotation": { "type": "boolean", "default": false },
+				"on_summon_function": { "type": "string", "default": "" },
+				"on_remove_function": { "type": "string", "default": "" },
+				"on_tick_function": { "type": "string", "default": "" }
+			}
+		},
+		"interaction_properties": {
+			"type": "object",
+			"properties": {
+				"width": { "type": "number", "default": 1.0 },
+				"height": { "type": "number", "default": 1.0 },
+				"response": { "type": "boolean", "default": true },
+				"on_summon_function": { "type": "string", "default": "" },
+				"on_interact_function": { "type": "string", "default": "" },
+				"on_attack_function": { "type": "string", "default": "" },
+				"on_remove_function": { "type": "string", "default": "" },
+				"on_tick_function": { "type": "string", "default": "" }
+			}
 		},
 		"node_transformation": {
 			"type": "object",
@@ -444,6 +573,14 @@
 			"type": "object",
 			"default": {},
 			"properties": {
+				"on_summon_function": {
+					"type": "string",
+					"default": ""
+				},
+				"on_apply_function": {
+					"type": "string",
+					"default": ""
+				},
 				"billboard": {
 					"type": "string",
 					"enum": ["fixed", "vertical", "horizontal", "center"],
@@ -478,6 +615,10 @@
 					"default": false
 				},
 				"is_glowing": {
+					"type": "boolean",
+					"default": false
+				},
+				"invisible": {
 					"type": "boolean",
 					"default": false
 				},
@@ -600,6 +741,22 @@
 						"is_enchanted": {
 							"type": "boolean",
 							"default": false
+						},
+						"item": {
+							"type": "string",
+							"default": "minecraft:air"
+						},
+						"item_model": {
+							"$ref": "#/definitions/resource_location"
+						},
+						"custom_model_data_string": {
+							"type": "string"
+						},
+						"elements": {
+							"type": "array",
+							"items": {
+								"$ref": "#/definitions/bone_element"
+							}
 						}
 					}
 				}
@@ -680,6 +837,16 @@
 							"type": "object",
 							"default": {},
 							"properties": {
+								"matrix": {
+									"type": "object",
+									"default": {},
+									"description": "A collection of baked transformation matrix keyframes, identified by a floating-point timestamp.",
+									"patternProperties": {
+										"^\\d+\\.\\d+$": {
+											"$ref": "#/definitions/transformation_keyframe"
+										}
+									}
+								},
 								"position": {
 									"type": "object",
 									"default": {},
@@ -726,6 +893,12 @@
 			"minItems": 3,
 			"maxItems": 3
 		},
+		"molang_vector16": {
+			"type": "array",
+			"items": { "$ref": "#/definitions/molang_expression" },
+			"minItems": 16,
+			"maxItems": 16
+		},
 		"texture_keyframe": {
 			"type": "object",
 			"default": {},
@@ -756,7 +929,10 @@
 			"required": ["value", "interpolation"],
 			"properties": {
 				"value": {
-					"$ref": "#/definitions/molang_vector3"
+					"oneOf": [
+						{ "$ref": "#/definitions/molang_vector3" },
+						{ "$ref": "#/definitions/molang_vector16" }
+					]
 				},
 				"post": {
 					"$ref": "#/definitions/molang_vector3"

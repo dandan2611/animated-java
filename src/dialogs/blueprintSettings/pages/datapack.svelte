@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte'
-	import { validateDataPackFolder, validateZipPath } from '../../../formats/blueprint/settings'
+	import {
+		validateDataPackFolder,
+		validateJsonPath,
+		validateZipPath,
+	} from '../../../formats/blueprint/settings'
 	import BoxSelect from '../../../svelteComponents/sidebarDialogItems/boxSelect.svelte'
 	import Checkbox from '../../../svelteComponents/sidebarDialogItems/checkbox.svelte'
 	import SelectFile from '../../../svelteComponents/sidebarDialogItems/selectFile.svelte'
@@ -11,6 +15,8 @@
 
 	let dataPackExportFormat = $state(Project.animated_java.data_pack_export_mode)
 	let dataPackLocation = $state(Project.animated_java.data_pack)
+	let jsonFile = $state(Project.animated_java.json_file)
+	let bakedAnimations = $state(Project.animated_java.baked_animations)
 	let animationSystem = $state(
 		Project.animated_java.use_storage_for_animation ? 'storage' : 'functions'
 	)
@@ -19,6 +25,8 @@
 	onDestroy(() => {
 		Project.animated_java.data_pack_export_mode = dataPackExportFormat
 		Project.animated_java.data_pack = dataPackLocation
+		Project.animated_java.json_file = jsonFile
+		Project.animated_java.baked_animations = bakedAnimations
 		Project.animated_java.use_storage_for_animation = animationSystem === 'storage'
 		Project.animated_java.auto_update_rig_orientation = autoUpdateRigOrientation
 	})
@@ -37,6 +45,11 @@
 				type: 'text',
 				label: translate('data_pack_export_mode.options.zip.title'),
 				description: translate('data_pack_export_mode.options.zip.description'),
+			},
+			json: {
+				type: 'text',
+				label: translate('data_pack_export_mode.options.json.title'),
+				description: translate('data_pack_export_mode.options.json.description'),
 			},
 			none: {
 				type: 'text',
@@ -63,9 +76,24 @@
 			checkValue={validateZipPath}
 			required
 		></SelectFile>
+	{:else if dataPackExportFormat === 'json'}
+		<SelectFile
+			label={translate('json_file.title')}
+			description={translate('json_file.description')}
+			extensions={['.json']}
+			bind:value={jsonFile}
+			checkValue={validateJsonPath}
+			required
+		></SelectFile>
 	{/if}
 
-	{#if dataPackExportFormat !== 'none'}
+	{#if dataPackExportFormat === 'json'}
+		<Checkbox
+			label={translate('baked_animations.title')}
+			description={translate('baked_animations.description')}
+			bind:value={bakedAnimations}
+		></Checkbox>
+	{:else if dataPackExportFormat !== 'none'}
 		<Checkbox
 			label={translate('auto_update_rig_orientation.title')}
 			description={translate('auto_update_rig_orientation.description')}

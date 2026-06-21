@@ -142,7 +142,10 @@ async function actuallyExportProject({
 			debugMode,
 		})
 
-		if (!aj.enable_plugin_mode && aj.data_pack_export_mode !== 'none') {
+		if (
+			!aj.enable_plugin_mode &&
+			(aj.data_pack_export_mode === 'folder' || aj.data_pack_export_mode === 'zip')
+		) {
 			await compileDataPack(aj.target_minecraft_version, {
 				rig,
 				animations,
@@ -153,7 +156,7 @@ async function actuallyExportProject({
 			})
 		}
 
-		if (aj.enable_plugin_mode) {
+		if (aj.enable_plugin_mode || aj.data_pack_export_mode === 'json') {
 			PROGRESS_DESCRIPTION.set('Exporting Plugin JSON...')
 			exportPluginBlueprint({ rig, animations })
 		}

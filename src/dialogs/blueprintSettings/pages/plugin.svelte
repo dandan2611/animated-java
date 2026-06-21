@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte'
+	import { validateJsonPath } from '../../../formats/blueprint/settings'
 	import Checkbox from '../../../svelteComponents/sidebarDialogItems/checkbox.svelte'
 	import SelectFile from '../../../svelteComponents/sidebarDialogItems/selectFile.svelte'
 	import { createScopedTranslator } from '../../../util/lang'
@@ -21,6 +22,7 @@
 		description={localize('json_file.description')}
 		extensions={['.json']}
 		bind:value={jsonFile}
+		checkValue={validateJsonPath}
 		required
 	></SelectFile>
 

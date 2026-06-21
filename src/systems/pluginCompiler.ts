@@ -21,6 +21,24 @@ import type {
 } from './rigRenderer'
 
 type StringVector3 = [string, string, string]
+type StringMatrix4 = [
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+]
 
 type TextureAnimationFrame =
 	| number
@@ -116,18 +134,29 @@ type NodeType =
 	| 'structure'
 	| 'camera'
 	| 'locator'
+	| 'interaction'
 
 type PluginNode =
 	| {
 			type: 'bone'
+			uuid?: string
+			name?: string
+			parent?: string
 			default_transformation?: NodeTransformation
 			display_properties?: Record<string, unknown>
+			variant_display_properties?: Record<string, unknown>
 			elements: BoneElement[]
 	  }
 	| {
 			type: Exclude<NodeType, 'bone'>
+			uuid?: string
+			name?: string
+			parent?: string
 			default_transformation?: NodeTransformation
 			display_properties?: Record<string, unknown>
+			locator_properties?: Record<string, unknown>
+			interaction_properties?: Record<string, unknown>
+			variant_display_properties?: Record<string, unknown>
 	  }
 
 type LoopMode = { type: 'once' } | { type: 'hold' } | { type: 'loop'; loop_delay?: string }
@@ -145,9 +174,17 @@ type TransformationKeyframeInterpolation =
 	| { type: 'step' }
 
 interface TransformationKeyframe {
-	value: StringVector3
+	value: StringVector3 | StringMatrix4
 	post?: StringVector3
 	interpolation: TransformationKeyframeInterpolation
+}
+
+interface FunctionKeyframe {
+	time: number
+	command: string
+	execute_condition?: string
+	repeat?: boolean
+	repeat_frequency?: number
 }
 
 interface PluginAnimation {
@@ -157,11 +194,13 @@ interface PluginAnimation {
 	start_delay?: string
 	global_keyframes?: {
 		texture?: Record<string, Record<string, string>>
-		event?: Record<string, { events: string[] }>
+			event?: Record<string, { events: string[] }>
 	}
+	function_keyframes?: Record<string, FunctionKeyframe[]>
 	node_keyframes?: Record<
 		string,
 		{
+			matrix?: Record<string, TransformationKeyframe>
 			position?: Record<string, TransformationKeyframe>
 			rotation?: Record<string, TransformationKeyframe>
 			scale?: Record<string, TransformationKeyframe>
@@ -174,11 +213,22 @@ export interface PluginBlueprintJson {
 	format_version: number
 	settings: {
 		id: string
+		display_item?: string
+		interpolation_duration?: number
+		teleportation_duration?: number
+		custom_rig_entity_tags?: string[]
+		auto_update_rig_orientation?: boolean
+		use_entity_stacking?: boolean
+		on_summon_function?: string
+		on_remove_function?: string
+		on_pre_tick_function?: string
+		on_post_tick_function?: string
 	}
 	textures?: Record<string, PluginTexture>
 	texture_palettes?: Record<string, TexturePalette>
 	nodes?: Record<string, PluginNode>
 	animations?: Record<string, PluginAnimation>
+	variants?: Record<string, Record<string, unknown>>
 }
 
 function ensureUniqueKey(baseKey: string, usedKeys: Set<string>) {
@@ -259,6 +309,9 @@ function serializeDisplayProperties(
 	config: IBlueprintDisplayEntityConfigJSON | undefined
 ): Record<string, unknown> | undefined {
 	const props: Record<string, unknown> = {}
+	if (config?.on_apply_function) props.on_apply_function = config.on_apply_function
+	if ((config as any)?.on_summon_function)
+		props.on_summon_function = (config as any).on_summon_function
 	if (config?.billboard !== undefined) props.billboard = config.billboard
 
 	const overrideBrightness = config?.override_brightness ?? false
@@ -282,9 +335,85 @@ function serializeDisplayProperties(
 	if (node.type === 'bone' && config?.enchanted !== undefined) {
 		props.is_enchanted = config.enchanted
 	}
+	if (config?.invisible !== undefined) props.invisible = config.invisible
 
 	if (Object.keys(props).length === 0) return undefined
 	return props
+}
+
+function serializeNodeBase(node: AnyRenderedNode) {
+	return scrubUndefined({
+		uuid: node.uuid,
+		name: node.name,
+		parent: node.parent,
+		default_transformation: serializeNodeTransformation(node.default_transform),
+	} as const)
+}
+
+function serializeVariantDisplayProperties(
+	node: AnyRenderedNode,
+	options?: {
+		variantModels: Record<string, Record<string, { model: IRenderedModel | null }>>
+		textureIdToKey: Map<string, string>
+		textureKeyToPaletteId: Map<string, string>
+		displayItem: string
+	}
+): Record<string, unknown> | undefined {
+	const configs = (node as any).configs?.variants as
+		| Record<string, IBlueprintDisplayEntityConfigJSON>
+		| undefined
+	if ((!configs || Object.keys(configs).length === 0) && node.type !== 'bone') return undefined
+
+	const props: Record<string, unknown> = {}
+	for (const [variantUuid, config] of Object.entries(configs ?? {})) {
+		const variant = Variant.getByUUID(variantUuid)
+		props[variant?.name ?? variantUuid] = serializeDisplayProperties(node, config) ?? {}
+	}
+	if (node.type === 'bone' && options) {
+		for (const variant of Variant.all) {
+			const renderedModel = options.variantModels[variant.uuid]?.[node.uuid]?.model
+			if (!renderedModel) continue
+			props[variant.name] = scrubUndefined({
+				...((props[variant.name] as Record<string, unknown> | undefined) ?? {}),
+				item: options.displayItem,
+				custom_model_data_string: variant.name,
+				elements: serializeBoneElements(renderedModel, {
+					textureIdToKey: options.textureIdToKey,
+					textureKeyToPaletteId: options.textureKeyToPaletteId,
+				}),
+			})
+		}
+	}
+	return props
+}
+
+function serializeLocatorProperties(node: AnyRenderedNode): Record<string, unknown> | undefined {
+	if (node.type !== 'locator') return undefined
+	const config = (node as any).config
+	if (!config) return undefined
+	return scrubUndefined({
+		use_entity: config.use_entity,
+		entity_type: config.entity_type,
+		sync_passenger_rotation: config.sync_passenger_rotation,
+		on_summon_function: config.on_summon_function,
+		on_remove_function: config.on_remove_function,
+		on_tick_function: config.on_tick_function,
+	})
+}
+
+function serializeInteractionProperties(node: AnyRenderedNode): Record<string, unknown> | undefined {
+	if (node.type !== 'interaction') return undefined
+	const config = (node as any).config
+	return scrubUndefined({
+		width: (node as any).width,
+		height: (node as any).height,
+		response: config?.response,
+		on_summon_function: config?.on_summon_function,
+		on_interact_function: config?.on_interact_function,
+		on_attack_function: config?.on_attack_function,
+		on_remove_function: config?.on_remove_function,
+		on_tick_function: config?.on_tick_function,
+	})
 }
 
 function intFromHex8(hex: string): number {
@@ -368,14 +497,20 @@ function serializeNode(
 		defaultVariantModels: Record<string, { model: IRenderedModel | null }>
 		textureIdToKey: Map<string, string>
 		textureKeyToPaletteId: Map<string, string>
+		variantModels: Record<string, Record<string, { model: IRenderedModel | null }>>
+		displayItem: string
 	}
 ): PluginNode {
-	const base = {
-		default_transformation: serializeNodeTransformation(node.default_transform),
-	} as const
+	const base = serializeNodeBase(node)
 
 	const config = (node as any).configs?.default as IBlueprintDisplayEntityConfigJSON | undefined
 	const displayProps = serializeDisplayProperties(node, config)
+	const variantDisplayProps = serializeVariantDisplayProperties(node, {
+		variantModels: options.variantModels,
+		textureIdToKey: options.textureIdToKey,
+		textureKeyToPaletteId: options.textureKeyToPaletteId,
+		displayItem: options.displayItem,
+	})
 
 	switch (node.type) {
 		case 'bone': {
@@ -387,6 +522,7 @@ function serializeNode(
 				type: 'bone',
 				...base,
 				display_properties: displayProps,
+				variant_display_properties: variantDisplayProps,
 				elements: serializeBoneElements(model, {
 					textureIdToKey: options.textureIdToKey,
 					textureKeyToPaletteId: options.textureKeyToPaletteId,
@@ -402,6 +538,7 @@ function serializeNode(
 					item: (node as any).item,
 					item_display: (node as any).item_display,
 				}),
+				variant_display_properties: variantDisplayProps,
 			} satisfies PluginNode)
 		}
 		case 'block_display': {
@@ -412,6 +549,7 @@ function serializeNode(
 					...displayProps,
 					block_state: (node as any).block,
 				}),
+				variant_display_properties: variantDisplayProps,
 			} satisfies PluginNode)
 		}
 		case 'text_display': {
@@ -429,6 +567,7 @@ function serializeNode(
 					line_width: (node as any).line_width,
 					text: (node as any).text,
 				}),
+				variant_display_properties: variantDisplayProps,
 			} satisfies PluginNode)
 		}
 		case 'struct':
@@ -436,10 +575,63 @@ function serializeNode(
 		case 'camera':
 			return { type: 'camera', ...base }
 		case 'locator':
-			return { type: 'locator', ...base }
+			return scrubUndefined({
+				type: 'locator',
+				...base,
+				locator_properties: serializeLocatorProperties(node),
+			} satisfies PluginNode)
+		case 'interaction':
+			return scrubUndefined({
+				type: 'interaction',
+				...base,
+				interaction_properties: serializeInteractionProperties(node),
+			} satisfies PluginNode)
 		default:
 			throw new Error(`Unsupported node type: ${(node as any).type}`)
 	}
+}
+
+function pushFunctionKeyframe(
+	functionKeyframes: Record<string, FunctionKeyframe[]>,
+	nodeId: string,
+	keyframe: FunctionKeyframe
+) {
+	const bucket = (functionKeyframes[nodeId] ??= [])
+	bucket.push(scrubUndefined(keyframe))
+}
+
+function serializeFunctionKeyframe(kf: _Keyframe): FunctionKeyframe | undefined {
+	const command = kf.function?.trim()
+	if (!command) return undefined
+	return scrubUndefined({
+		time: kf.time,
+		command,
+		execute_condition: kf.execute_condition?.trim(),
+		repeat: kf.repeat,
+		repeat_frequency: kf.repeat_frequency,
+	})
+}
+
+function buildVariants(): Record<string, Record<string, unknown>> {
+	const variants: Record<string, Record<string, unknown>> = {}
+	for (const variant of Variant.all) {
+		variants[variant.name] = scrubUndefined({
+			uuid: variant.uuid,
+			name: variant.name,
+			display_name: variant.displayName,
+			is_default: variant.isDefault,
+			texture_map: Object.fromEntries(variant.textureMap.map),
+			excluded_nodes: variant.excludedNodes.map(item => item.value),
+		})
+	}
+	return variants
+}
+
+function customRigEntityTags(): string[] {
+	return Project!.animated_java.custom_rig_entity_tags
+		.split(',')
+		.map(tag => tag.trim())
+		.filter(Boolean)
 }
 
 function buildPalettes(options: {
@@ -555,6 +747,10 @@ function keyframeDataPoint(kf: _Keyframe, index: number): StringVector3 {
 	return [String(kf.get('x', index)), String(kf.get('y', index)), String(kf.get('z', index))]
 }
 
+function matrixDataPoint(transform: INodeTransform): StringMatrix4 {
+	return transform.matrix.elements.map(toMolangNumber) as StringMatrix4
+}
+
 function serializeRawAnimation(options: {
 	animation: IRenderedAnimation
 	nodeUuidToId: Map<string, string>
@@ -572,6 +768,8 @@ function serializeRawAnimation(options: {
 	const node_keyframes: NonNullable<PluginAnimation['node_keyframes']> = {}
 	// eslint-disable-next-line @typescript-eslint/naming-convention
 	let global_keyframes: PluginAnimation['global_keyframes']
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	const function_keyframes: NonNullable<PluginAnimation['function_keyframes']> = {}
 
 	for (const [animatorUuid, animator] of Object.entries(bbAnimation.animators)) {
 		// @ts-expect-error - broken bb types
@@ -585,8 +783,9 @@ function serializeRawAnimation(options: {
 
 			if (kf.channel === 'position' || kf.channel === 'rotation' || kf.channel === 'scale') {
 				if (!nodeId) continue
+				const channel = kf.channel
 				const channels = (node_keyframes[nodeId] ??= {})
-				const bucket = (channels[kf.channel] ??= {})
+				const bucket = (channels[channel] ??= {})
 				const entry: TransformationKeyframe = {
 					value: keyframeDataPoint(kf, 0),
 					interpolation: keyframeInterpolation(kf),
@@ -598,6 +797,10 @@ function serializeRawAnimation(options: {
 				const texture = (global_keyframes.texture ??= {})
 				const slot = (texture[timeKey] ??= {})
 				for (const paletteId of paletteIds) slot[paletteId] = kf.variant.name
+			} else if (kf.channel === 'function') {
+				const functionKeyframe = serializeFunctionKeyframe(kf)
+				if (!functionKeyframe) continue
+				pushFunctionKeyframe(function_keyframes, nodeId ?? 'root', functionKeyframe)
 			}
 		}
 	}
@@ -608,6 +811,8 @@ function serializeRawAnimation(options: {
 		start_delay: '0',
 		length: bbAnimation.length,
 		global_keyframes,
+		function_keyframes:
+			Object.keys(function_keyframes).length > 0 ? function_keyframes : undefined,
 		node_keyframes,
 	} satisfies PluginAnimation)
 }
@@ -623,6 +828,8 @@ function serializeBakedAnimation(options: {
 	const node_keyframes: NonNullable<PluginAnimation['node_keyframes']> = {}
 	// eslint-disable-next-line @typescript-eslint/naming-convention
 	let global_keyframes: PluginAnimation['global_keyframes']
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	const function_keyframes: NonNullable<PluginAnimation['function_keyframes']> = {}
 
 	for (const frame of animation.frames) {
 		const timeKey = formatTimestamp(frame.time)
@@ -631,16 +838,29 @@ function serializeBakedAnimation(options: {
 			const nodeId = nodeUuidToId.get(uuid)
 			if (!nodeId) continue
 
+			if (transform.function) {
+				pushFunctionKeyframe(function_keyframes, nodeId, {
+					time: frame.time,
+					command: transform.function,
+					execute_condition: transform.function_execute_condition,
+				})
+			}
+
 			const interpolation: TransformationKeyframeInterpolation =
 				transform.interpolation === 'step' || transform.interpolation === 'pre-post'
 					? { type: 'step' }
 					: { type: 'linear', easing: 'linear' }
 
 			const channels = (node_keyframes[nodeId] ??= {})
+			const matrix = (channels.matrix ??= {})
 			const position = (channels.position ??= {})
 			const rotation = (channels.rotation ??= {})
 			const scale = (channels.scale ??= {})
 
+			matrix[timeKey] = {
+				value: matrixDataPoint(transform),
+				interpolation,
+			}
 			position[timeKey] = {
 				value: transform.pos.map(toMolangNumber) as StringVector3,
 				interpolation,
@@ -664,6 +884,14 @@ function serializeBakedAnimation(options: {
 				for (const paletteId of paletteIds) slot[paletteId] = variant.name
 			}
 		}
+
+		if (frame.function) {
+			pushFunctionKeyframe(function_keyframes, 'root', {
+				time: frame.time,
+				command: frame.function,
+				execute_condition: frame.function_execute_condition,
+			})
+		}
 	}
 
 	return scrubUndefined({
@@ -672,6 +900,8 @@ function serializeBakedAnimation(options: {
 		start_delay: '0',
 		length: animation.frames.at(-1)?.time ?? 0,
 		global_keyframes,
+		function_keyframes:
+			Object.keys(function_keyframes).length > 0 ? function_keyframes : undefined,
 		node_keyframes,
 	} satisfies PluginAnimation)
 }
@@ -713,6 +943,8 @@ export function exportPluginBlueprint(options: {
 			defaultVariantModels,
 			textureIdToKey,
 			textureKeyToPaletteId,
+			variantModels: options.rig.variants,
+			displayItem: aj.display_item,
 		})
 	}
 
@@ -725,14 +957,25 @@ export function exportPluginBlueprint(options: {
 	}
 
 	const blueprint: PluginBlueprintJson = scrubUndefined({
-		format_version: 1,
+		format_version: 2,
 		settings: {
-			id: `animated_java:${aj.blueprint_id}`,
+			id: aj.blueprint_id,
+			display_item: aj.display_item,
+			interpolation_duration: aj.interpolation_duration,
+			teleportation_duration: aj.teleportation_duration,
+			custom_rig_entity_tags: customRigEntityTags(),
+			auto_update_rig_orientation: aj.auto_update_rig_orientation,
+			use_entity_stacking: aj.use_entity_stacking,
+			on_summon_function: aj.on_summon_function,
+			on_remove_function: aj.on_remove_function,
+			on_pre_tick_function: aj.on_pre_tick_function,
+			on_post_tick_function: aj.on_post_tick_function,
 		},
 		textures,
 		texture_palettes: palettes,
 		nodes,
 		animations,
+		variants: buildVariants(),
 	})
 
 	if (detectCircularReferences(blueprint)) {

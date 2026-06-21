@@ -1,6 +1,7 @@
 export default function upgrade(model: any) {
 	console.log('Processing model format 1.1', model)
 	const fixed = JSON.parse(JSON.stringify(model))
+	fixed.animated_java.exporter_settings ??= {}
 
 	fixed.animated_java.settings.resource_pack_mcmeta =
 		fixed.animated_java.settings.resource_pack_folder

@@ -47,11 +47,15 @@ export function openBlueprintSettings() {
 				icon: 'fa-person',
 				condition: () =>
 					Project.pluginMode.get() === false &&
-					Project.animated_java.data_pack_export_mode !== 'none',
+					(Project.animated_java.data_pack_export_mode === 'folder' ||
+						Project.animated_java.data_pack_export_mode === 'zip'),
 			},
 			eventFunctions: {
 				component: EventFunctionsComponent,
-				condition: () => Project.pluginMode.get() === false,
+				condition: () =>
+					Project.pluginMode.get() === false &&
+					(Project.animated_java.data_pack_export_mode === 'folder' ||
+						Project.animated_java.data_pack_export_mode === 'zip'),
 				label: localize('pages.event_functions.title'),
 				icon: 'functions',
 			},

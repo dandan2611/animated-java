@@ -6,6 +6,7 @@ export default function upgrade(model: any) {
 	console.log('Processing model format 1.0.0-pre1', model)
 
 	const defaultSettings = getDefaultProjectSettings()
+	model.animated_java.exporter_settings ??= {}
 	const datapackExporterSettings =
 		model.animated_java.exporter_settings['animated_java:datapack_exporter']
 

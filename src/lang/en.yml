@@ -210,6 +210,12 @@ animated_java:
             title: Zip
             description: |-
               Export the Data Pack as a .zip file.
+          json:
+            title: Plugin JSON
+            description: |-
+              Export an Animated Java plugin JSON file instead of a Data Pack.
+
+              This keeps Resource Pack export available.
           none:
             title: None
             description: |-
@@ -410,6 +416,7 @@ animated_java:
           invalid_path: Invalid file path!
           no_file_selected: No file selected!
           not_a_file: The selected path is not a file!
+          require_json_extension: Selected file must end with .json extension.
 
     display_entity:
       title: Display Entity Config for "%s"
